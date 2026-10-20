@@ -299,10 +299,20 @@ function setScanMsg(t, ok) {
   const m = $("scanMsg"); m.textContent = t;
   m.style.color = ok === false ? "#c0392b" : ok ? "var(--ok)" : "";
 }
+// Algunas etiquetas traen un QR con texto extra (ej. "290393652 81144 14017340").
+// Si el texto leído no es igual a un código de la ruta, busca el código dentro del texto.
+function codigoEnTexto(texto) {
+  const t = String(texto).trim();
+  const codes = [...new Set(LINES.filter(x => x.ruta === curRoute && x.pickable).map(x => x.codigo)
+    .concat(state.adicionales.filter(x => x.ruta === curRoute).map(x => x.codigo)))].filter(Boolean);
+  if (codes.includes(t)) return t;
+  return codes.filter(k => k.length >= 6 && t.includes(k)).sort((a, b) => b.length - a.length)[0] || t;
+}
 function handleScan(code) {
-  const c = String(code).trim(), now = Date.now();
-  if (c === lastCode && now - lastTime < 2000) return; // evita leer dos veces el mismo código
-  lastCode = c; lastTime = now;
+  const raw = String(code).trim(), now = Date.now();
+  if (raw === lastCode && now - lastTime < 2000) return; // evita leer dos veces el mismo código
+  lastCode = raw; lastTime = now;
+  const c = codigoEnTexto(raw);
   const pend = LINES.find(x => x.ruta === curRoute && x.pickable && x.codigo === c && !state.picked[x.id]);
   const adi = state.adicionales.find(x => x.ruta === curRoute && x.codigo === c && !x.done);
   const yaEsta = LINES.some(x => x.ruta === curRoute && x.pickable && x.codigo === c);
