@@ -92,6 +92,7 @@
     <div class="card hidden" id="scanBox">
       <div id="reader" style="width:100%"></div>
       <div id="scanMsg" class="muted" style="margin-top:8px"></div>
+      <button id="btnAddScan" class="hidden" style="width:100%;margin-top:8px">+ Agregar como adicional a esta ruta</button>
       <button class="ghost" id="btnStopScan" style="width:100%;margin-top:8px">Cerrar cámara</button>
     </div>
     <form class="row" id="searchForm" style="margin-bottom:10px">
@@ -316,14 +317,33 @@ function handleScan(code) {
   const c = codigoEnTexto(raw);
   const pend = LINES.find(x => x.ruta === curRoute && x.pickable && x.codigo === c && !state.picked[x.id]);
   const adi = state.adicionales.find(x => x.ruta === curRoute && x.codigo === c && !x.done);
-  const yaEsta = LINES.some(x => x.ruta === curRoute && x.pickable && x.codigo === c);
+  const yaEsta = LINES.some(x => x.ruta === curRoute && x.pickable && x.codigo === c) ||
+                 state.adicionales.some(x => x.ruta === curRoute && x.codigo === c);
+  $("btnAddScan").classList.add("hidden");
   if (pend) { state.picked[pend.id] = true; save(); setScanMsg("✓ " + pend.producto.replace(/^↳\s*/, "") + " · " + pend.cant + " u", true); }
   else if (adi) { adi.done = true; save(); setScanMsg("✓ Adicional: " + (adi.desc || c), true); }
   else if (yaEsta) setScanMsg("Ya estaba pickeado: " + c);
-  else setScanMsg("No está en esta ruta: " + c, false);
+  else {
+    setScanMsg("No está en la planilla de esta ruta: " + c, false);
+    $("btnAddScan").dataset.code = c;
+    $("btnAddScan").classList.remove("hidden");
+  }
   if (navigator.vibrate) navigator.vibrate(pend || adi ? 80 : [200, 100, 200]);
   renderRoute();
 }
+// Redespacho o producto que no vino en la planilla: se agrega a la ruta como adicional ya pickeado.
+function addAdicional(c) {
+  const desc = prompt("Descripción del producto para " + c + " (ej. velador):", "");
+  if (desc === null) return;
+  const cant = parseInt(prompt("Cantidad:", "1"), 10) || 1;
+  state.adicionales.push({ id: "a" + Date.now(), ruta: curRoute, codigo: c, desc: desc.trim(), cant, orden: "", done: true });
+  save();
+  $("btnAddScan").classList.add("hidden");
+  setScanMsg("✓ Agregado a la ruta como adicional: " + (desc.trim() || c), true);
+  renderRoute();
+}
+$("btnAddScan").onclick = () => addAdicional($("btnAddScan").dataset.code);
+
 function startScan() {
   if (scanner) return;
   if (typeof Html5Qrcode === "undefined") { alert("No cargó el lector de códigos. Revisa la conexión a internet."); return; }
@@ -352,7 +372,10 @@ $("searchForm").onsubmit = e => {
   const c = codigoEnTexto(v);
   const existe = LINES.some(x => x.ruta === curRoute && x.pickable && x.codigo === c) ||
                  state.adicionales.some(x => x.ruta === curRoute && x.codigo === c);
-  if (!existe) { alert("No hay un ítem con código " + c + " en esta ruta."); return; }
+  if (!existe) {
+    if (confirm("El código " + c + " no está en la planilla de esta ruta. ¿Agregarlo como adicional?")) addAdicional(c);
+    return;
+  }
   lastCode = ""; // permite marcar aunque se haya leído antes
   handleScan(c);
   if (!scanner) alert($("scanMsg").textContent);
