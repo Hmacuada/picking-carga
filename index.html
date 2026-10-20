@@ -94,10 +94,11 @@
       <div id="scanMsg" class="muted" style="margin-top:8px"></div>
       <button class="ghost" id="btnStopScan" style="width:100%;margin-top:8px">Cerrar cámara</button>
     </div>
-    <div class="row" style="margin-bottom:10px">
-      <div class="grow"><input id="search" type="search" placeholder="Código impreso + Enter, o buscar"></div>
-      <button id="btnScan">📷 Escanear</button>
-    </div>
+    <form class="row" id="searchForm" style="margin-bottom:10px">
+      <div class="grow"><input id="search" type="search" enterkeyhint="go" placeholder="Código impreso, luego Enter"></div>
+      <button type="submit" class="ghost">Marcar</button>
+      <button type="button" id="btnScan">📷 Escanear</button>
+    </form>
     <div class="chips" style="margin-bottom:10px">
       <button class="chip on" data-f="todo">Todo</button>
       <button class="chip" data-f="pend">Pendientes</button>
@@ -342,8 +343,10 @@ $("btnStopScan").onclick = stopScan;
 
 $("search").oninput = () => curRoute && renderRoute();
 // Respaldo manual: si el QR no se lee, escribe el código impreso (en negrita) y presiona Enter.
-$("search").onkeydown = e => {
-  if (e.key !== "Enter" || !curRoute) return;
+// El formulario hace que Enter (o "Ir" del teclado del celular) funcione en Android e iPhone.
+$("searchForm").onsubmit = e => {
+  e.preventDefault();
+  if (!curRoute) return;
   const v = $("search").value.trim();
   if (!v) return;
   const c = codigoEnTexto(v);
