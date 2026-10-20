@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Picking de carga</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1b2330; --muted:#6b7585; --line:#e3e7ee;
+          --accent:#2f6fdd; --ok:#1f9d55; --warn:#b7791f; --info:#8a94a6; --radius:12px; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#12151b; --card:#1d222b; --text:#e8ecf2; --muted:#9aa4b5; --line:#2c3440; }
+  }
+  :root[data-theme="dark"] { --bg:#12151b; --card:#1d222b; --text:#e8ecf2; --muted:#9aa4b5; --line:#2c3440; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  header { position:sticky; top:0; background:var(--card); border-bottom:1px solid var(--line); padding:12px 16px; z-index:2; display:flex; align-items:center; gap:10px; }
+  header h1 { font-size:17px; margin:0; flex:1; }
+  main { padding:12px 16px 40px; max-width:640px; margin:0 auto; }
+  button { font:inherit; border:0; border-radius:10px; padding:10px 14px; background:var(--accent); color:#fff; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
+  button:disabled { opacity:.4; }
+  input, select { font:inherit; width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:10px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .grow { flex:1; min-width:0; }
+  .bar { height:8px; background:var(--line); border-radius:6px; overflow:hidden; margin-top:8px; }
+  .bar > span { display:block; height:100%; background:var(--ok); width:0; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:999px; background:var(--line); color:var(--muted); white-space:nowrap; }
+  .tag.add { background:#fdf0d5; color:#8a5a00; }
+  .tag.info { background:var(--line); }
+  .item { display:flex; gap:12px; align-items:flex-start; padding:12px; border-bottom:1px solid var(--line); }
+  .item:last-child { border-bottom:0; }
+  .item.done { opacity:.55; }
+  .item.comp { padding-left:30px; }
+  .check { width:28px; height:28px; border-radius:8px; border:2px solid var(--accent); flex:0 0 28px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; }
+  .item.done .check { background:var(--ok); border-color:var(--ok); }
+  .item.noop .check { border-color:var(--line); background:var(--line); }
+  .qty { font-variant-numeric: tabular-nums; font-weight:700; font-size:18px; min-width:36px; text-align:right; }
+  .code { font-family: ui-monospace, Consolas, monospace; font-size:12px; color:var(--muted); }
+  .section { margin:18px 0 8px; font-size:13px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .hidden { display:none !important; }
+  .chips { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; }
+  .chip { white-space:nowrap; padding:8px 12px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--text); }
+  .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .stat { font-size:22px; font-weight:700; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:360px) { .grid { grid-template-columns:1fr; } }
+  .print-only { display:none; }
+  @media print {
+    @page { margin: 14mm; }
+    :root, :root[data-theme="dark"] { --bg:#fff; --card:#fff; --text:#000; --muted:#444; --line:#bbb; }
+    body { background:#fff; color:#000; }
+    header, #viewRoutes, #viewRoute, #btnPdf, #btnCopy, #repCsv, #btnReset, .print-hide { display:none !important; }
+    #viewReport { display:block !important; }
+    main { padding:0; max-width:none; }
+    .print-only { display:block; margin-bottom:10px; }
+    .card { border:0; border-bottom:1px solid #bbb; border-radius:0; padding:8px 0; page-break-inside:auto; }
+    .card:first-of-type { page-break-before:auto; }
+    .section { color:#000; margin:10px 0 4px; }
+    .item { padding:4px 0; border-bottom:1px solid #ddd; break-inside:avoid; }
+    .item.done { opacity:1; }
+    .check { border-color:#000; color:#000; }
+    .item.done .check { background:#fff; color:#000; }
+    .tag { border:1px solid #888; background:none; color:#000; }
+  }
+  textarea { width:100%; min-height:160px; font:12px ui-monospace, Consolas, monospace; border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--card); color:var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Rutas de carga</h1>
+  <button class="ghost" id="btnBack" style="display:none">← Volver</button>
+  <button class="ghost" id="btnReport">Reporte</button>
+</header>
+
+<main>
+  <!-- Vista 1: rutas -->
+  <section id="viewRoutes"></section>
+
+  <!-- Vista 2: picking de una ruta -->
+  <section id="viewRoute" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div class="grow"><div class="stat" id="rTitle"></div><div class="muted" id="rSub"></div></div>
+        <div style="text-align:right"><div class="stat" id="rCount"></div><div class="muted">pickeados</div></div>
+      </div>
+      <div class="bar"><span id="rBar"></span></div>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="grow"><input id="search" type="search" placeholder="Buscar por código, SKU o descripción"></div>
+    </div>
+    <div class="chips" style="margin-bottom:10px">
+      <button class="chip on" data-f="todo">Todo</button>
+      <button class="chip" data-f="pend">Pendientes</button>
+      <button class="chip" data-f="done">Pickeados</button>
+    </div>
+    <div class="card" style="padding:0" id="rList"></div>
+
+    <div class="section">Adicionales (redespachos)</div>
+    <div class="card">
+      <div class="grid" style="margin-bottom:8px">
+        <input id="aCodigo" placeholder="Código o SKU">
+        <input id="aCant" type="number" min="1" value="1" inputmode="numeric" placeholder="Cantidad">
+      </div>
+      <input id="aDesc" placeholder="Descripción" style="margin-bottom:8px">
+      <input id="aOrden" placeholder="N° de orden / cliente (opcional)" style="margin-bottom:8px">
+      <button id="aAdd" style="width:100%">Agregar adicional</button>
+    </div>
+    <div class="card" style="padding:0" id="aList"></div>
+
+    <div class="section">Solo informativo (no se pickea)</div>
+    <div class="card" style="padding:0" id="iList"></div>
+  </section>
+
+  <!-- Vista 3: reporte -->
+  <section id="viewReport" class="hidden">
+    <button id="btnPdf" style="width:100%;margin-bottom:10px">Descargar reporte en PDF</button>
+    <div id="repBody"></div>
+    <div class="section">Texto del reporte</div>
+    <button class="ghost" id="btnCopy" style="width:100%;margin-bottom:8px">Copiar reporte (CSV)</button>
+    <textarea id="repCsv" readonly></textarea>
+    <button class="ghost" id="btnReset" style="width:100%;margin-top:14px;color:#c0392b;border-color:#c0392b">Borrar todo el progreso</button>
+  </section>
+</main>
+
+<script>
+const KEY = "picking-carga-v1";
+const DATA_KEY = "picking-carga-datos-v1";
+let LINES = [];
+let ROUTES = [];
+
+// Una línea es pickeable si tiene código. Las sin código quedan como informativas.
+// Kits de pata sin código único: por ahora se dejan sin pickear.
+function prepare() {
+  LINES.forEach((l, i) => { l.id = l.ruta + "|" + i; l.pickable = !!(l.codigo && String(l.codigo).trim()); });
+  ROUTES = [...new Set(LINES.map(l => l.ruta))];
+}
+function loadData() {
+  try { const d = JSON.parse(localStorage.getItem(DATA_KEY)); if (Array.isArray(d)) LINES = d; } catch (e) {}
+  prepare();
+}
+function saveData() { try { localStorage.setItem(DATA_KEY, JSON.stringify(LINES)); } catch (e) {} }
+
+// Lee la planilla .xlsx: cada hoja (salvo "Resumen") es una ruta.
+// Busca la fila de encabezados con "Código" y toma las columnas por nombre.
+function importFile(file) {
+  if (!file) return;
+  if (state.picked && Object.keys(state.picked).length && !confirm("Cargar una planilla nueva reinicia el progreso de picking. ¿Continuar?")) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+      const norm = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+      const nuevas = [];
+      wb.SheetNames.forEach(name => {
+        if (/resumen/i.test(name)) return;
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true });
+        const h = rows.findIndex(r => r.some(c => norm(c) === "codigo" || norm(c) === "código"));
+        if (h < 0) return;
+        const col = n => rows[h].findIndex(c => norm(c).startsWith(n));
+        const C = { carga: col("carga"), parada: col("parada"), cliente: col("cliente"), orden: col("orden"),
+                    codigo: col("codigo"), producto: col("producto"), cant: col("cant") };
+        rows.slice(h + 1).forEach(r => {
+          const prod = String(r[C.producto] ?? "").trim();
+          if (!prod) return;
+          nuevas.push({ ruta: name.trim(), carga: r[C.carga], parada: r[C.parada], cliente: r[C.cliente],
+            orden: String(r[C.orden] ?? ""), codigo: String(r[C.codigo] ?? "").trim(), producto: prod,
+            componente: /↳/.test(prod), cant: r[C.cant], m3: "" });
+        });
+      });
+      if (!nuevas.length) { alert("No encontré líneas de picking en esta planilla."); return; }
+      LINES = nuevas; saveData(); state = { picked: {}, adicionales: [] }; save(); prepare(); renderRoutes();
+    } catch (err) { alert("No pude leer el archivo: " + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function importCard() {
+  return `<div class="card"><div class="muted" style="margin-bottom:8px">Carga la planilla del día (.xlsx). Queda guardada solo en este celular.</div>
+    <input type="file" id="fileIn" accept=".xlsx,.xls"></div>`;
+}
+
+let state = load();
+let curRoute = null, filter = "todo";
+
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.picked) return s; } catch (e) {}
+  return { picked: {}, adicionales: [] };
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const pickables = r => LINES.filter(l => l.ruta === r && l.pickable);
+const adics = r => state.adicionales.filter(a => a.ruta === r);
+function routeStats(r) {
+  const p = pickables(r), a = adics(r);
+  const done = p.filter(l => state.picked[l.id]).length + a.filter(x => x.done).length;
+  return { total: p.length + a.length, done };
+}
+
+function show(v) {
+  ["viewRoutes","viewRoute","viewReport"].forEach(id => $(id).classList.toggle("hidden", id !== v));
+  const back = $("btnBack");
+  back.style.display = v === "viewRoute" || v === "viewReport" ? "" : "none";
+}
+
+function renderRoutes() {
+  show("viewRoutes"); curRoute = null;
+  $("title").textContent = "Rutas de carga";
+  $("viewRoutes").innerHTML = importCard() + (ROUTES.length ? "" : `<div class="card muted">Todavía no hay planilla cargada.</div>`) + ROUTES.map(r => {
+    const s = routeStats(r), pct = s.total ? Math.round(s.done / s.total * 100) : 0;
+    const orders = new Set(LINES.filter(l => l.ruta === r).map(l => l.orden)).size;
+    return `<div class="card" style="cursor:pointer" data-route="${r}">
+      <div class="row"><div class="grow"><div class="stat">${r}</div>
+      <div class="muted">${orders} órdenes · ${s.total} ítems a pickear</div></div>
+      <div style="text-align:right"><div class="stat">${s.done}/${s.total}</div><div class="muted">${pct}%</div></div></div>
+      <div class="bar"><span style="width:${pct}%"></span></div></div>`;
+  }).join("");
+  document.querySelectorAll("[data-route]").forEach(el => el.onclick = () => openRoute(el.dataset.route));
+  const fi = $("fileIn");
+  if (fi) fi.onchange = e => importFile(e.target.files[0]);
+}
+
+function openRoute(r) {
+  curRoute = r; show("viewRoute");
+  $("title").textContent = r; $("search").value = ""; filter = "todo";
+  document.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.f === "todo"));
+  renderRoute();
+}
+
+function renderRoute() {
+  const r = curRoute, s = routeStats(r), pct = s.total ? Math.round(s.done / s.total * 100) : 0;
+  const ordersN = new Set(LINES.filter(l => l.ruta === r).map(l => l.orden)).size;
+  $("rTitle").textContent = r;
+  $("rSub").textContent = ordersN + " órdenes";
+  $("rCount").textContent = s.done + "/" + s.total;
+  $("rBar").style.width = pct + "%";
+
+  const q = $("search").value.trim().toLowerCase();
+  const match = (txt) => !q || txt.toLowerCase().includes(q);
+  const keep = (done) => filter === "todo" || (filter === "done" ? done : !done);
+
+  const items = LINES.filter(l => l.ruta === r && l.pickable)
+    .sort((a, b) => Number(a.carga) - Number(b.carga) || 0)
+    .filter(l => match(`${l.codigo} ${l.producto} ${l.cliente}`) && keep(!!state.picked[l.id]));
+  $("rList").innerHTML = items.length ? items.map(l => {
+    const d = !!state.picked[l.id];
+    return `<div class="item ${d ? "done" : ""} ${l.componente ? "comp" : ""}" data-id="${esc(l.id)}">
+      <div class="check">${d ? "✓" : ""}</div>
+      <div class="grow">
+        <div>${esc(l.producto.replace(/^↳\s*/, ""))}</div>
+        <div class="code">${esc(l.codigo)} · carga ${esc(l.carga)} · parada ${esc(l.parada)} · ${esc(l.cliente)} · orden ${esc(l.orden)}</div>
+      </div>
+      <div class="qty">${esc(l.cant)}</div></div>`;
+  }).join("") : `<div class="item"><div class="muted">Nada para mostrar con este filtro.</div></div>`;
+  document.querySelectorAll("#rList .item[data-id]").forEach(el => el.onclick = () => {
+    const id = el.dataset.id; state.picked[id] ? delete state.picked[id] : state.picked[id] = true;
+    save(); renderRoute();
+  });
+
+  const ad = adics(r).filter(x => match(`${x.codigo} ${x.desc} ${x.orden}`) && keep(!!x.done));
+  $("aList").innerHTML = ad.length ? ad.map(x => `<div class="item ${x.done ? "done" : ""}" data-add="${x.id}">
+      <div class="check">${x.done ? "✓" : ""}</div>
+      <div class="grow"><div>${esc(x.desc || "(sin descripción)")} <span class="tag add">adicional</span></div>
+      <div class="code">${esc(x.codigo)} ${x.orden ? "· " + esc(x.orden) : ""}</div></div>
+      <div class="qty">${esc(x.cant)}</div>
+      <button class="ghost" data-del="${x.id}" style="padding:6px 8px">✕</button></div>`).join("")
+    : `<div class="item"><div class="muted">Sin adicionales para esta ruta.</div></div>`;
+  document.querySelectorAll("[data-add]").forEach(el => el.onclick = e => {
+    if (e.target.dataset.del) return;
+    const x = state.adicionales.find(a => a.id === el.dataset.add); x.done = !x.done; save(); renderRoute();
+  });
+  document.querySelectorAll("[data-del]").forEach(el => el.onclick = () => {
+    state.adicionales = state.adicionales.filter(a => a.id !== el.dataset.del); save(); renderRoute();
+  });
+
+  const info = LINES.filter(l => l.ruta === r && !l.pickable);
+  $("iList").innerHTML = info.length ? info.map(l => `<div class="item noop">
+      <div class="check">–</div>
+      <div class="grow"><div>${esc(l.producto.replace(/^↳\s*/, ""))}</div>
+      <div class="code">carga ${esc(l.carga)} · ${esc(l.cliente)} · orden ${esc(l.orden)}</div></div>
+      <div class="qty">${esc(l.cant)}</div></div>`).join("")
+    : `<div class="item"><div class="muted">Nada informativo.</div></div>`;
+}
+
+$("search").oninput = () => curRoute && renderRoute();
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => {
+  filter = c.dataset.f; document.querySelectorAll(".chip").forEach(x => x.classList.toggle("on", x === c)); renderRoute();
+});
+$("aAdd").onclick = () => {
+  const codigo = $("aCodigo").value.trim(), desc = $("aDesc").value.trim();
+  const cant = parseInt($("aCant").value, 10) || 1;
+  if (!codigo && !desc) { alert("Pon código/SKU o descripción"); return; }
+  state.adicionales.push({ id: "a" + Date.now(), ruta: curRoute, codigo, desc, cant, orden: $("aOrden").value.trim(), done: false });
+  save(); ["aCodigo","aDesc","aOrden"].forEach(i => $(i).value = ""); $("aCant").value = 1; renderRoute();
+};
+
+function buildReport() {
+  const rows = [["ruta","seccion","carga","parada","cliente","orden","codigo","producto","cantidad","estado"]];
+  ROUTES.forEach(r => {
+    LINES.filter(l => l.ruta === r).forEach(l => {
+      const sec = l.pickable ? "pickeo" : "informativo";
+      const est = !l.pickable ? "no se pickea" : (state.picked[l.id] ? "pickeado" : "pendiente");
+      rows.push([r, sec, l.carga, l.parada, l.cliente, l.orden, l.codigo, l.producto.replace(/^↳\s*/, ""), l.cant, est]);
+    });
+    adics(r).forEach(a => rows.push([r, "adicional", "", "", "", a.orden, a.codigo, a.desc, a.cant, a.done ? "pickeado" : "pendiente"]));
+  });
+  return rows;
+}
+function csvOf(rows) {
+  return rows.map(r => r.map(v => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }).join(";")).join("\n");
+}
+
+function renderReport() {
+  show("viewReport"); $("title").textContent = "Reporte";
+  const fecha = new Date().toLocaleString("es-CL");
+  $("repBody").innerHTML = `<div class="print-only"><div class="stat">Reporte de picking de carga</div><div class="muted">Generado ${esc(fecha)}</div></div>` + ROUTES.map(r => {
+    const p = pickables(r), done = p.filter(l => state.picked[l.id]), pend = p.filter(l => !state.picked[l.id]);
+    const info = LINES.filter(l => l.ruta === r && !l.pickable), ad = adics(r);
+    const list = (arr, f) => arr.length ? arr.map(f).join("") : `<div class="muted">Ninguno</div>`;
+    return `<div class="card"><div class="stat">${r}</div>
+      <div class="muted">Pickeados ${done.length}/${p.length} · Adicionales ${ad.length} · Informativos ${info.length}</div>
+      <div class="section">Pendientes</div>${list(pend, l => `<div class="item" style="padding:6px 0"><div class="grow">${esc(l.producto.replace(/^↳\s*/,""))}</div><div class="code">${esc(l.codigo)} · ${esc(l.cant)} u · orden ${esc(l.orden)}</div></div>`)}
+      <div class="section">Adicionales</div>${list(ad, a => `<div class="item" style="padding:6px 0"><div class="grow">${esc(a.desc || a.codigo)}</div><div class="code">${esc(a.codigo)} · ${esc(a.cant)} u · ${a.done ? "pickeado" : "pendiente"}</div></div>`)}
+      <div class="section">Sin código (informativo)</div>${list(info, l => `<div class="item" style="padding:6px 0"><div class="grow">${esc(l.producto.replace(/^↳\s*/,""))}</div><div class="code">${esc(l.cant)} u · orden ${esc(l.orden)}</div></div>`)}
+    </div>`;
+  }).join("");
+  $("repCsv").value = csvOf(buildReport());
+}
+$("btnReport").onclick = renderReport;
+$("btnBack").onclick = () => renderRoutes();
+$("btnPdf").onclick = () => { renderReport(); window.print(); };
+$("btnCopy").onclick = async () => {
+  const t = csvOf(buildReport());
+  try { await navigator.clipboard.writeText(t); alert("Reporte copiado"); } catch (e) { $("repCsv").select(); document.execCommand && document.execCommand("copy"); }
+};
+$("btnReset").onclick = () => {
+  if (!confirm("¿Borrar todo el progreso y adicionales?")) return;
+  state = { picked: {}, adicionales: [] }; save(); renderRoutes();
+};
+loadData();
+renderRoutes();
+</script>
+</body>
+</html>
