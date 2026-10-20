@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Picking de carga</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root { --bg:#f5f6f8; --card:#fff; --text:#1b2330; --muted:#6b7585; --line:#e3e7ee;
           --accent:#2f6fdd; --ok:#1f9d55; --warn:#b7791f; --info:#8a94a6; --radius:12px; }
@@ -88,8 +89,14 @@
       </div>
       <div class="bar"><span id="rBar"></span></div>
     </div>
+    <div class="card hidden" id="scanBox">
+      <div id="reader" style="width:100%"></div>
+      <div id="scanMsg" class="muted" style="margin-top:8px"></div>
+      <button class="ghost" id="btnStopScan" style="width:100%;margin-top:8px">Cerrar cámara</button>
+    </div>
     <div class="row" style="margin-bottom:10px">
       <div class="grow"><input id="search" type="search" placeholder="Buscar por código, SKU o descripción"></div>
+      <button id="btnScan">📷 Escanear</button>
     </div>
     <div class="chips" style="margin-bottom:10px">
       <button class="chip on" data-f="todo">Todo</button>
@@ -201,6 +208,7 @@ function routeStats(r) {
 }
 
 function show(v) {
+  if (scanner) stopScan();
   ["viewRoutes","viewRoute","viewReport"].forEach(id => $(id).classList.toggle("hidden", id !== v));
   const back = $("btnBack");
   back.style.display = v === "viewRoute" || v === "viewReport" ? "" : "none";
@@ -284,6 +292,43 @@ function renderRoute() {
       <div class="qty">${esc(l.cant)}</div></div>`).join("")
     : `<div class="item"><div class="muted">Nada informativo.</div></div>`;
 }
+
+// Escáner con cámara (html5-qrcode). Marca el ítem de la ruta actual con ese código.
+let scanner = null, lastCode = "", lastTime = 0;
+function setScanMsg(t, ok) {
+  const m = $("scanMsg"); m.textContent = t;
+  m.style.color = ok === false ? "#c0392b" : ok ? "var(--ok)" : "";
+}
+function handleScan(code) {
+  const c = String(code).trim(), now = Date.now();
+  if (c === lastCode && now - lastTime < 2000) return; // evita leer dos veces el mismo código
+  lastCode = c; lastTime = now;
+  const pend = LINES.find(x => x.ruta === curRoute && x.pickable && x.codigo === c && !state.picked[x.id]);
+  const adi = state.adicionales.find(x => x.ruta === curRoute && x.codigo === c && !x.done);
+  const yaEsta = LINES.some(x => x.ruta === curRoute && x.pickable && x.codigo === c);
+  if (pend) { state.picked[pend.id] = true; save(); setScanMsg("✓ " + pend.producto.replace(/^↳\s*/, "") + " · " + pend.cant + " u", true); }
+  else if (adi) { adi.done = true; save(); setScanMsg("✓ Adicional: " + (adi.desc || c), true); }
+  else if (yaEsta) setScanMsg("Ya estaba pickeado: " + c);
+  else setScanMsg("No está en esta ruta: " + c, false);
+  if (navigator.vibrate) navigator.vibrate(pend || adi ? 80 : [200, 100, 200]);
+  renderRoute();
+}
+function startScan() {
+  if (scanner) return;
+  if (typeof Html5Qrcode === "undefined") { alert("No cargó el lector de códigos. Revisa la conexión a internet."); return; }
+  $("scanBox").classList.remove("hidden");
+  setScanMsg("Apunta la cámara al código de barras.");
+  scanner = new Html5Qrcode("reader");
+  scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 260, height: 160 } }, handleScan, () => {})
+    .catch(err => { setScanMsg("No pude abrir la cámara. Revisa los permisos del navegador. " + err, false); });
+}
+function stopScan() {
+  const s = scanner; scanner = null;
+  $("scanBox").classList.add("hidden");
+  if (s) s.stop().catch(() => {}).finally(() => { try { s.clear(); } catch (e) {} });
+}
+$("btnScan").onclick = startScan;
+$("btnStopScan").onclick = stopScan;
 
 $("search").oninput = () => curRoute && renderRoute();
 document.querySelectorAll(".chip").forEach(c => c.onclick = () => {
